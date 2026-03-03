@@ -17,7 +17,9 @@ export class PurchasesService {
   ) {}
 
   async create(dto: any, userId: string, userName: string, companyId: string): Promise<PurchaseDocument> {
+    console.log(dto);
     const fournisseur = await this.fournisseursService.findOne(dto.FournisseurId, companyId);
+
     let totalHT = 0, totalTTC = 0;
     const items = dto.items.map((item: any) => {
       const tva = item.tva || 0;
