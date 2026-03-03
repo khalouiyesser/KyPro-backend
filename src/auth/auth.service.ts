@@ -7,6 +7,7 @@ import * as crypto from 'crypto';
 import { User, UserDocument, UserRole } from '../users/user.schema';
 import { Company, CompanyDocument } from '../company/company.schema';
 import { MailService } from '../common/services/mail.service';
+import {use} from "passport";
 
 @Injectable()
 export class AuthService {
@@ -38,6 +39,9 @@ export class AuthService {
   }
 
   async login(user: UserDocument) {
+
+
+    console.log(user);
     if (user.role !== UserRole.SYSTEM_ADMIN && user.companyId) {
       const company = await this.companyModel.findById(user.companyId).lean();
       if (!company) throw new UnauthorizedException('Company introuvable');

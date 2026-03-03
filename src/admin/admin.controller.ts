@@ -1,10 +1,23 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Query } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Query,
+  HttpCode,
+  HttpStatus
+} from '@nestjs/common';
+import {ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiBody} from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { SubscriptionPlan, SubscriptionStatus } from '../company/company.schema';
+import {CreateCompanyWithAdminDto} from "./dto/create-company-with-admin.dto";
 
 @ApiTags('System Admin')
 @ApiBearerAuth('JWT')
@@ -25,9 +38,9 @@ export class AdminController {
   }
 
   // ── Companies ─────────────────────────────────────────────────────────────
-  @Post('companies')
-  @ApiOperation({ summary: 'Créer une company + son admin_company (envoi email)' })
-  createCompany(@Body() dto: any) { return this.adminService.createCompany(dto); }
+  // @Post('companies')
+  // @ApiOperation({ summary: 'Créer une company + son admin_company (envoi email)' })
+  // createCompany(@Body() dto: any) { return this.adminService.createCompany(dto); }
 
 
   @Get('companies')
@@ -89,4 +102,16 @@ export class AdminController {
   @Post('users/:id/reset-password')
   @ApiOperation({ summary: 'Réinitialiser le mot de passe (email envoyé)' })
   resetPassword(@Param('id') id: string) { return this.adminService.resetUserPassword(id); }
+
+
+  @Post('companies')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('system_admin')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Créer une entreprise + son admin' })
+  @ApiBody({ type: CreateCompanyWithAdminDto })
+  createCompany(@Body() dto: CreateCompanyWithAdminDto) {
+    return this.adminService.createCompanyWithAdmin(dto);
+  }
+
 }

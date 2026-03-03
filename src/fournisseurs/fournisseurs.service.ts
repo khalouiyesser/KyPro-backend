@@ -72,6 +72,8 @@ export class FournisseursService {
         .populate('products', 'name unit purchasePrice tva stockQuantity stockThreshold');
     if (!f) throw new NotFoundException('Fournisseur introuvable');
     return f;
+
+
   }
 
   // ── Modifier un fournisseur ───────────────────────────────────────────────

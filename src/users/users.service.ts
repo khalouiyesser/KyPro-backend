@@ -10,6 +10,7 @@ import { User, UserDocument } from './user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { MailService } from '../common/services/mail.service';
+import {Roles} from "../common/decorators/roles.decorator";
 
 @Injectable()
 export class UsersService {
@@ -50,7 +51,7 @@ export class UsersService {
       name: "yesser",
       email: email,
       password: hashed,
-      role: "admin",
+      role: "system_admin",
       mustChangePassword: true,
     });
     await user.save();

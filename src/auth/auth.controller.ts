@@ -21,6 +21,8 @@ export class AuthController {
   @ApiOperation({ summary: 'Mon profil JWT décodé' })
   getProfile(@Request() req) { return req.user; }
 
+
+
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT')

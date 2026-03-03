@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import { Company, CompanyDocument, SubscriptionStatus, SubscriptionPlan } from '../company/company.schema';
 import { User, UserDocument, UserRole } from '../users/user.schema';
 import { MailService } from '../common/services/mail.service';
+import {CreateCompanyWithAdminDto} from "./dto/create-company-with-admin.dto";
 
 @Injectable()
 export class AdminService {
@@ -175,4 +176,63 @@ export class AdminService {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#!';
     return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
   }
+
+
+
+
+
+  async createCompanyWithAdmin(dto: CreateCompanyWithAdminDto) {
+    // 1. Unicité email company
+    if (await this.companyModel.findOne({ email: dto.company.email }))
+      throw new ConflictException('Email entreprise déjà utilisé');
+
+    // 2. Unicité email admin
+    if (await this.userModel.findOne({ email: dto.admin.email.toLowerCase() }))
+      throw new ConflictException('Email administrateur déjà utilisé');
+
+    // 3. Créer la company
+    const company = await new this.companyModel({
+      ...dto.company,
+      country:            dto.company.country ?? 'Tunisie',
+      plan:               dto.company.plan ?? 'trial',
+      subscriptionStatus: dto.company.subscriptionStatus ?? 'trial',
+      amountPaid:         dto.company.amountPaid ?? 0,
+      ocrLimitPerMonth:   dto.company.ocrLimitPerMonth ?? 400,
+      ocrAttemptsLeft:    dto.company.ocrLimitPerMonth ?? 400,
+      primaryColor:       dto.company.primaryColor ?? '#2563EB',
+      assujettTVA:        dto.company.assujettTVA ?? true,
+    }).save();
+
+    // 4. Créer l'admin lié à la company
+    const tempPassword = this.genPassword();
+    const admin = await new this.userModel({
+      name:               dto.admin.name,
+      email:              dto.admin.email.toLowerCase(),
+      phone:              dto.admin.phone,
+      password:           await bcrypt.hash(tempPassword, 12),
+      role:               UserRole.ADMIN_COMPANY,
+      companyId:          company._id,
+      mustChangePassword: true,
+      isActive:           true,
+    }).save();
+
+    // 5. Email de bienvenue
+    await this.mailService.sendWelcomeEmail(admin.email, admin.name, tempPassword);
+
+    const adminObj = admin.toObject() as any;
+    delete adminObj.password;
+
+    return {
+      message: `Entreprise "${company.name}" créée avec succès`,
+      company,
+      admin: adminObj,
+    };
+  }
+
+  // private genPassword(): string {
+  //   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#!';
+  //   return Array.from({ length: 12 }, () =>
+  //       chars[Math.floor(Math.random() * chars.length)]
+  //   ).join('');
+  // }
 }
