@@ -13,7 +13,6 @@ export class PurchasesController {
   constructor(private readonly purchasesService: PurchasesService, private readonly exportService: ExportService) {}
 
   @Post() create(@Body() dto: any, @Request() req) {
-    console.log(222222222222222222222222)
     return this.purchasesService.create(dto, req.user.userId, req.user.name, req.user.companyId);
   }
   @Get() findAll(@Request() req, @Query('search') search?: string, @Query('status') status?: string, @Query('sortBy') sortBy?: string, @Query('sortOrder') sortOrder?: 'asc'|'desc') { return this.purchasesService.findAll(req.user.companyId, { search, status, sortBy, sortOrder }); }
