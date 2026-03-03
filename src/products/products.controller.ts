@@ -1,4 +1,7 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Request } from '@nestjs/common';
+import {
+  Controller, Get, Post, Body, Patch, Param, Delete,
+  UseGuards, Query, Request,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -13,13 +16,26 @@ export class ProductsController {
   @Post()
   @ApiOperation({ summary: 'Créer un produit' })
   create(@Body() dto: any, @Request() req) {
-    return this.productsService.create(dto, req.user.userId, req.user.name, req.user.companyId);
+    return this.productsService.create(
+        dto,
+        req.user.userId,
+        req.user.name,
+        req.user.companyId,
+    );
   }
 
   @Get()
   @ApiOperation({ summary: 'Lister les produits' })
-  findAll(@Request() req, @Query('search') search?: string, @Query('lowStock') lowStock?: string, @Query('sortBy') sortBy?: string, @Query('sortOrder') sortOrder?: 'asc'|'desc') {
-    return this.productsService.findAll(req.user.companyId, { search, lowStock, sortBy, sortOrder });
+  findAll(
+      @Request() req,
+      @Query('search') search?: string,
+      @Query('lowStock') lowStock?: string,
+      @Query('sortBy') sortBy?: string,
+      @Query('sortOrder') sortOrder?: 'asc' | 'desc',
+  ) {
+    return this.productsService.findAll(req.user.companyId, {
+      search, lowStock, sortBy, sortOrder,
+    });
   }
 
   @Get(':id')
@@ -29,7 +45,13 @@ export class ProductsController {
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: any, @Request() req) {
-    return this.productsService.update(id, req.user.companyId, dto, req.user.userId, req.user.name);
+    return this.productsService.update(
+        id,
+        req.user.companyId,
+        dto,
+        req.user.userId,
+        req.user.name,
+    );
   }
 
   @Delete(':id')

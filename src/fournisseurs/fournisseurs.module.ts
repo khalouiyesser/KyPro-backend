@@ -1,11 +1,19 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Fournisseur, FournisseurSchema } from './fournisseur.schema';
 import { FournisseursController } from './fournisseurs.controller';
 import { FournisseursService } from './fournisseurs.service';
+import { ProductsModule } from '../products/products.module';
+import { Purchase, PurchaseSchema } from '../purchases/purchase.schema';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Fournisseur.name, schema: FournisseurSchema }])],
+  imports: [
+    MongooseModule.forFeature([
+      { name: Fournisseur.name, schema: FournisseurSchema },
+      { name: Purchase.name,    schema: PurchaseSchema    }, // ← pour getPurchases()
+    ]),
+    forwardRef(() => ProductsModule),
+  ],
   controllers: [FournisseursController],
   providers: [FournisseursService],
   exports: [FournisseursService],
