@@ -34,7 +34,7 @@ export class CreatePaymentVenteDto {
 
     @ApiProperty({ description: 'ID de la vente qui enregistre le paiement' })
     @IsMongoId()
-    @IsNotEmpty()
+    @IsOptional()
     saleId: string;
 
 

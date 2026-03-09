@@ -1,4 +1,7 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Request, Res, HttpStatus } from '@nestjs/common';
+import {
+  Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Request, Res, HttpStatus,
+  BadRequestException
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Response } from 'express';
 import { ClientsService } from './clients.service';
@@ -19,6 +22,21 @@ export class ClientsController {
   @ApiOperation({ summary: 'Créer un client' })
   create(@Body() dto: any, @Request() req) {
     return this.clientsService.create(dto, req.user.userId, req.user.name, req.user.companyId);
+  }
+
+
+  @Post('payment/:clientId')
+  async ajouterPayment(
+      @Param('clientId') clientId: string,
+      @Body() dto: { amount: number; note: string },
+      @Request() req,
+  ) {
+    if (!dto.note?.trim()) throw new BadRequestException('La note est obligatoire');
+    return this.clientsService.creerPaymentVenteService(
+        { userId: req.user.userId, clientId, amount: dto.amount, note: dto.note },
+        req.user.userId,
+        req.user.companyId,
+    );
   }
 
   @Get()
@@ -68,6 +86,8 @@ export class ClientsController {
     return this.clientsService.findOne(id, req.user.companyId);
   }
 
+
+
   @Patch(':id')
   @ApiOperation({ summary: 'Modifier un client' })
   update(@Param('id') id: string, @Body() dto: any, @Request() req) {
@@ -79,4 +99,7 @@ export class ClientsController {
   remove(@Param('id') id: string, @Request() req) {
     return this.clientsService.remove(id, req.user.companyId);
   }
+
+
+
 }

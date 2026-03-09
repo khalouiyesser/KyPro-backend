@@ -41,7 +41,6 @@ export class AuthService {
   async login(user: UserDocument) {
 
 
-    console.log(user);
     if (user.role !== UserRole.SYSTEM_ADMIN && user.companyId) {
       const company = await this.companyModel.findById(user.companyId).lean();
       if (!company) throw new UnauthorizedException('Company introuvable');

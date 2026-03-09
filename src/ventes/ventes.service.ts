@@ -177,4 +177,28 @@ export class VentesService {
     if (startDate || endDate) { filter.createdAt = {}; if (startDate) filter.createdAt.$gte = new Date(startDate); if (endDate) { const e = new Date(endDate); e.setHours(23,59,59,999); filter.createdAt.$lte = e; } }
     return this.saleModel.find(filter).sort({ createdAt: -1 }).exec();
   }
+
+
+  async findByCompanyId(clientId: string, companyId: string) {
+        return this.paymentVenteService.findByClient(clientId, companyId);
+  }
+
+
+  // payment-vente.service.ts
+  // ventes.service.ts
+  async aggregateRevenueByClients(
+      clientIds: Types.ObjectId[],
+      companyId: string,
+  ): Promise<Map<string, { totalRevenue: number; count: number }>> {
+    const rows = await this.saleModel.aggregate([
+      { $match: { clientId: { $in: clientIds }, companyId: new Types.ObjectId(companyId) } },
+      { $group: { _id: '$clientId', totalRevenue: { $sum: '$totalTTC' }, count: { $sum: 1 } } },
+    ]);
+    const map = new Map<string, any>();
+    for (const row of rows) {
+      map.set(row._id.toString(), { totalRevenue: row.totalRevenue, count: row.count });
+    }
+    return map;
+  }
+
 }

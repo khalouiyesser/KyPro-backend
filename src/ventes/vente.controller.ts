@@ -41,7 +41,7 @@ export class VenteController {
     return this.ventesService.findOne(id, req.user.companyId);
   }
 
-  @Post(':id/payment')
+  @Post(':id/payments')
   @ApiOperation({ summary: 'Ajouter un paiement' })
   addPayment(@Param('id') id: string, @Body() dto: any, @Request() req) {
     return this.ventesService.addPayment(id, req.user.companyId, dto, req.user.userId, req.user.name);
