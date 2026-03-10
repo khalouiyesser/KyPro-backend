@@ -1,34 +1,34 @@
-// import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
-// import { ExportService } from './export.service';
-// import { CreateExportDto } from './dto/create-export.dto';
-// import { UpdateExportDto } from './dto/update-export.dto';
-//
-// @Controller('export')
-// export class ExportController {
-//   constructor(private readonly exportService: ExportService) {}
-//
-//   @Post()
-//   create(@Body() createExportDto: CreateExportDto) {
-//     return this.exportService.create(createExportDto);
-//   }
-//
-//   @Get()
-//   findAll() {
-//     return this.exportService.findAll();
-//   }
-//
-//   @Get(':id')
-//   findOne(@Param('id') id: string) {
-//     return this.exportService.findOne(+id);
-//   }
-//
-//   @Patch(':id')
-//   update(@Param('id') id: string, @Body() updateExportDto: UpdateExportDto) {
-//     return this.exportService.update(+id, updateExportDto);
-//   }
-//
-//   @Delete(':id')
-//   remove(@Param('id') id: string) {
-//     return this.exportService.remove(+id);
-//   }
-// }
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ExportService } from './export.service';
+
+@ApiTags('Reports')
+@ApiBearerAuth('JWT')
+@Controller('export')
+export class ExportController {
+  constructor(private readonly exportService: ExportService) {}
+
+  @Get('clients/:id/report')
+  @ApiOperation({ summary: 'Exporter un rapport client', description: 'Génère un rapport complet d\'un client' })
+  exportClientReport(@Param('id') id: string) {
+    return { message: 'Export client report', clientId: id };
+  }
+
+  @Get('sales/report')
+  @ApiOperation({ summary: 'Exporter le rapport des ventes', description: 'Génère un rapport de ventes périodique' })
+  exportSalesReport() {
+    return { message: 'Export sales report' };
+  }
+
+  @Get('purchases/report')
+  @ApiOperation({ summary: 'Exporter le rapport des achats', description: 'Génère un rapport d\'achats périodique' })
+  exportPurchasesReport() {
+    return { message: 'Export purchases report' };
+  }
+
+  @Get('accounting/report')
+  @ApiOperation({ summary: 'Exporter le rapport comptable', description: 'Génère un rapport comptable complet' })
+  exportAccountingReport() {
+    return { message: 'Export accounting report' };
+  }
+}

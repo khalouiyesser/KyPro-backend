@@ -28,25 +28,49 @@ async function bootstrap() {
     .setTitle('ERP API — Système Multi-Company')
     .setDescription('Backend ERP complet avec OCR, rôles, abonnements et exports PDF/Excel')
     .setVersion('2.0')
+    .setContact('Support', 'https://erp.example.com', 'support@erp.example.com')
+    .setLicense('MIT', 'https://opensource.org/licenses/MIT')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'JWT')
-    .addTag('Auth').addTag('System Admin').addTag('Company').addTag('Users')
-    .addTag('Clients').addTag('Fournisseurs').addTag('Products')
-    .addTag('Ventes').addTag('Purchases').addTag('Quotes')
-    .addTag('Charges').addTag('Employees').addTag('Stock')
-    .addTag('Accounting').addTag('Dashboard').addTag('Reports')
-    .addTag('OCR').addTag('Notifications')
-    .addTag('Deliveries').addTag('Returns')
-    .addTag('Payments Vente').addTag('Payments Achat')
+    .addServer(`http://localhost:${process.env.PORT || 3000}`, 'Développement')
+    .addServer('https://api.erp.example.com', 'Production')
+    .addTag('Auth', 'Authentification et gestion des sessions')
+    .addTag('System Admin', 'Administration système')
+    .addTag('Company', 'Gestion des entreprises')
+    .addTag('Users', 'Gestion des utilisateurs')
+    .addTag('Clients', 'Gestion des clients')
+    .addTag('Fournisseurs', 'Gestion des fournisseurs')
+    .addTag('Products', 'Gestion des produits')
+    .addTag('Ventes', 'Gestion des ventes')
+    .addTag('Purchases', 'Gestion des achats')
+    .addTag('Quotes', 'Gestion des devis')
+    .addTag('Charges', 'Gestion des charges')
+    .addTag('Employees', 'Gestion des employés')
+    .addTag('Stock', 'Gestion du stock')
+    .addTag('Accounting', 'Comptabilité')
+    .addTag('Dashboard', 'Tableaux de bord')
+    .addTag('Reports', 'Rapports et exports')
+    .addTag('OCR', 'Reconnaissance optique de caractères')
+    .addTag('Notifications', 'Notifications')
+    .addTag('Deliveries', 'Livraisons')
+    .addTag('Returns', 'Retours')
+    .addTag('Payments Vente', 'Paiements des ventes')
+    .addTag('Payments Achat', 'Paiements des achats')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document, {
-    swaggerOptions: { persistAuthorization: true },
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      filter: true,
+      showRequestHeaders: true,
+    },
+    customCss: `.topbar { display: none } .swagger-ui .info .title { color: #1890ff; font-size: 28px; } .swagger-ui .scheme-container { background: #f5f5f5; }`,
   });
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  // logger.log(`🚀 Serveur: http://localhost:${port}`);
-  // logger.log(`📚 Swagger: http://localhost:${port}/api`);
+  logger.log(`🚀 Serveur: http://localhost:${port}`);
+  logger.log(`📚 Swagger: http://localhost:${port}/api`);
 }
 bootstrap();
