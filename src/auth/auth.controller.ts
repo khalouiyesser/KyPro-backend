@@ -18,7 +18,8 @@ export class AuthController {
   @ApiOkResponse({ description: 'Connexion réussie, token JWT fourni' })
   @ApiUnauthorizedResponse({ description: 'Email ou mot de passe incorrect' })
   @ApiInternalServerErrorResponse({ description: 'Erreur serveur' })
-  login(@Request() req) { return this.authService.login(req.user); }
+  login(@Request() req) {
+    return this.authService.login(req.user); }
 
   @Get('profile')
   @UseGuards(JwtAuthGuard)
