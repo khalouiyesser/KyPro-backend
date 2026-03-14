@@ -35,6 +35,7 @@ export class OcrService {
     await company.save();
   }
 
+
   // ── Appel OCR Space API (commun) ─────────────────────────────────────────
   private async callOcrSpace(formPayload: Record<string, string>): Promise<string> {
     const apiKey = this.configService.get<string>('OCR_SPACE_API_KEY');
@@ -69,6 +70,7 @@ export class OcrService {
     await this.checkAndDecrementOcr(companyId);
     try {
       const text = await this.callOcrSpace({ url: imageUrl });
+      console.log('OCR raw text:', text);
       return this.extractChargeFields(text);
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
@@ -82,6 +84,7 @@ export class OcrService {
     await this.checkAndDecrementOcr(companyId);
     try {
       const text = await this.callOcrSpace({ base64Image: `data:${mimeType};base64,${base64}` });
+
       return this.extractChargeFields(text);
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
@@ -90,83 +93,390 @@ export class OcrService {
     }
   }
 
+
+
+
   // ── Extraction intelligente des champs d'une charge ──────────────────────
   private extractChargeFields(text: string) {
+
+    // ═══════════════════════════════════════════════════════════════
+    //  UTILITAIRES
+    // ═══════════════════════════════════════════════════════════════
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-    // Montant TTC
+    /**
+     * Parse n'importe quel format de montant :
+     *   "1 620,00 €"  → 1620.00
+     *   "1,280.00"    → 1280.00
+     *   "273,682"     → 273.682  (TND 3 décimales)
+     *   "60.00 €"     → 60.00
+     */
+    const toNum = (s: string): number => {
+      const n = s.replace(/[€$£\s]/g, '').trim();
+      // 1.234,56 ou 1 234,56 (européen)
+      if (/^\d{1,3}([. ]\d{3})*,\d{2,3}$/.test(n))
+        return parseFloat(n.replace(/[. ]/g, '').replace(',', '.'));
+      // 1,234.56 (anglais)
+      if (/^\d{1,3}(,\d{3})*\.\d{2,3}$/.test(n))
+        return parseFloat(n.replace(/,/g, ''));
+      // 273,682 (TND 3 décimales)
+      if (/^\d+,\d{3}$/.test(n))
+        return parseFloat(n.replace(',', '.'));
+      // 273.682
+      if (/^\d+\.\d{3}$/.test(n))
+        return parseFloat(n);
+      // Fallback
+      return parseFloat(n.replace(',', '.'));
+    };
+
+    /** Ligne qui contient UNIQUEMENT un montant (avec espace milliers optionnel) */
+    const LINE_AMT_RE = /^(\d{1,3}(?:\s\d{3})*[.,]\d{2,3}|\d+[.,]\d{2,3})\s*[€$£TND]?\s*$/;
+    const isAmountLine = (l: string) => LINE_AMT_RE.test(l);
+
+    /** Ligne qui est un label de total connu */
+    const isLabelLine = (l: string) =>
+        /^(total\s*(ht|tva|ttc|remise|général)|net\s*[àa]\s*payer|timbre|fodec|base(\s*ht)?|mode\s*r[eè]glement|montant\s*(ht|tva|ttc)|sous[\s-]total|solde|paiement\s*d[uû])/i.test(l);
+
+    /**
+     * STRATÉGIE 1 — "Bloc labels + valeurs séparés"
+     * Quand les labels (Total HT / Total TVA / Total TTC) sont groupés
+     * et leurs valeurs apparaissent ensemble APRÈS (factures françaises/euros).
+     *
+     * Trouve la position ordinale du label dans son bloc,
+     * puis retourne la valeur à la même position dans le groupe de montants.
+     */
+    const extractOrdinal = (labelRe: RegExp, searchRange = 15): number | null => {
+      const idx = lines.findIndex(l => labelRe.test(l));
+      if (idx === -1) return null;
+
+      // Inline : "Total TTC  1 620,00 €"
+      const inlineRe = new RegExp(
+          labelRe.source + '[^\\n\\d€$£]{0,40}(\\d[\\d.,\\s]*[.,]\\d{2,3})',
+          labelRe.flags,
+      );
+      const inlineM = lines[idx].match(inlineRe);
+      if (inlineM) { const v = toNum(inlineM[1]); if (!isNaN(v) && v > 0) return v; }
+
+      // Remonter au début du bloc de labels consécutifs
+      let blockStart = idx;
+      while (blockStart > 0 && isLabelLine(lines[blockStart - 1])) blockStart--;
+
+      // Collecter les labels du bloc
+      const blockLabels: { label: string; i: number }[] = [];
+      let i = blockStart;
+      while (i < lines.length && (isLabelLine(lines[i]) || lines[i] === '')) {
+        if (isLabelLine(lines[i])) blockLabels.push({ label: lines[i], i });
+        i++;
+      }
+
+      // Collecter les montants qui suivent le bloc
+      const blockAmounts: number[] = [];
+      let j = i;
+      while (j < Math.min(i + searchRange, lines.length) && !isLabelLine(lines[j])) {
+        if (isAmountLine(lines[j])) blockAmounts.push(toNum(lines[j]));
+        j++;
+      }
+
+      // Retourner le montant à la position ordinale du label
+      const pos = blockLabels.findIndex(b => labelRe.test(b.label));
+      if (pos !== -1 && pos < blockAmounts.length) return blockAmounts[pos];
+
+      // Fallback : max des montants du bloc
+      return blockAmounts.length ? Math.max(...blockAmounts) : null;
+    };
+
+    /**
+     * STRATÉGIE 2 — "Fenêtre bornée" (ligne par ligne)
+     * Pour les factures où labels et valeurs alternent (OCR mélange de colonnes).
+     * Collecte les montants ligne par ligne entre deux ancres, applique un sélecteur.
+     */
+    const extractWindow = (
+        startRe:  RegExp,
+        stopRe:   RegExp,
+        pick:     'max' | 'min' | 'first' | 'last' = 'max',
+        min = 0,
+        max = 9_999_999,
+    ): number | null => {
+      const start = lines.findIndex(l => startRe.test(l));
+      if (start === -1) return null;
+
+      // Chercher inline d'abord
+      const inlineRe = new RegExp(
+          startRe.source + '[^\\n\\d€$£]{0,40}(\\d[\\d.,\\s]*[.,]\\d{2,3})',
+          startRe.flags,
+      );
+      const inlineM = lines[start].match(inlineRe);
+      if (inlineM) { const v = toNum(inlineM[1]); if (!isNaN(v) && v >= min && v <= max) return v; }
+
+      // Fenêtre jusqu'au stop
+      let end = Math.min(start + 25, lines.length);
+      for (let i = start + 1; i < end; i++) {
+        if (stopRe.test(lines[i]) && !startRe.test(lines[i])) { end = i; break; }
+      }
+
+      // Extraire ligne par ligne (pas de fusion inter-lignes)
+      const nums: number[] = [];
+      for (let i = start + 1; i < end; i++) {
+        const solo = lines[i].match(LINE_AMT_RE);
+        if (solo) {
+          const v = toNum(solo[1]);
+          if (!isNaN(v) && v >= min && v <= max) nums.push(v);
+          continue;
+        }
+        // Montant inline dans une phrase
+        const re = /(?:^|[\s:])(\d{1,3}(?:\s\d{3})*[.,]\d{2,3}|\d+[.,]\d{2,3})\s*[€$£]?(?:\s|$)/g;
+        for (const m of lines[i].matchAll(re)) {
+          const v = toNum(m[1]);
+          if (!isNaN(v) && v >= min && v <= max) nums.push(v);
+        }
+      }
+      if (!nums.length) return null;
+      switch (pick) {
+        case 'max':   return Math.max(...nums);
+        case 'min':   return Math.min(...nums);
+        case 'first': return nums[0];
+        case 'last':  return nums[nums.length - 1];
+      }
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    //  1. MONTANT PRINCIPAL (Net à payer / Total TTC)
+    //     → Stratégie 1 (ordinal) en premier, puis Stratégie 2 (fenêtre)
+    //     → min=5 pour ignorer les petits montants parasites
+    // ═══════════════════════════════════════════════════════════════
     let amount: number | null = null;
-    const amountPatterns = [
-      /(?:total\s*ttc|montant\s*ttc|net\s*à\s*payer|total\s*général|total\s*facture)[:\s]*([0-9]+[.,][0-9]+)/i,
-      /(?:total|montant)[:\s]*([0-9]+[.,][0-9]+)\s*(?:tnd|dt|dinar)?/i,
-      /([0-9]+[.,][0-9]{3})\s*(?:tnd|dt)/i,
+
+    const AMOUNT_LABEL_PAIRS: [RegExp, RegExp][] = [
+      [/net\s*[àa]\s*payer/i,         /^page\s*\d|^$$/i],
+      [/total\s*ttc\b/i,              /net\s*[àa]\s*payer|^page\s*\d/i],
+      [/total\s*g[eé]n[eé]ral/i,      /^page\s*\d/i],
+      [/montant\s*ttc\b/i,            /^page\s*\d/i],
+      [/amount\s*due/i,               /^page\s*\d/i],
+      [/solde\s*[àa]\s*payer/i,       /^page\s*\d/i],
     ];
-    for (const p of amountPatterns) {
-      const m = text.match(p);
-      if (m) { amount = parseFloat(m[1].replace(',', '.')); break; }
+
+    for (const [labelRe, stopRe] of AMOUNT_LABEL_PAIRS) {
+      // Essai ordinal d'abord (blocs labels groupés)
+      amount = extractOrdinal(labelRe);
+      if (amount && amount >= 5) break;
+      // Essai fenêtre (labels/valeurs mélangés)
+      amount = extractWindow(labelRe, stopRe, 'max', 5);
+      if (amount) break;
     }
 
-    // Montant HT
+    // Fallback : plus grand montant ligne-par-ligne dans tout le doc
+    if (!amount) {
+      const all = lines
+          .map(l => { const m = l.match(LINE_AMT_RE); return m ? toNum(m[1]) : null; })
+          .filter((n): n is number => n !== null && n >= 5);
+      if (all.length) amount = Math.max(...all);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  2. TOTAL HT
+    //     Stratégie A : ordinal dans le bloc (factures européennes)
+    //     Stratégie B : premier montant ≥5 après "Mode règlement"
+    //                   jusqu'à "Arrêtée" (factures tunisiennes OCR)
+    // ═══════════════════════════════════════════════════════════════
     let amountHT: number | null = null;
-    for (const p of [/(?:total\s*ht|montant\s*ht|base\s*ht)[:\s]*([0-9]+[.,][0-9]+)/i]) {
-      const m = text.match(p);
-      if (m) { amountHT = parseFloat(m[1].replace(',', '.')); break; }
-    }
 
-    // TVA
-    let tva: number | null = null;
-    const tvaMatch = text.match(/tva\s*(?:à|au|de)?\s*([0-9]+)\s*%/i);
-    if (tvaMatch) tva = parseInt(tvaMatch[1]);
-    else if (text.match(/19\s*%/)) tva = 19;
-    else if (text.match(/7\s*%/)) tva = 7;
+    // Stratégie A
+    amountHT =
+        extractOrdinal(/^total\s*ht$/i) ??
+        extractOrdinal(/^montant\s*ht$/i) ??
+        extractOrdinal(/^sous[\s-]total$/i);
 
-    // Date
-    let date: string | null = null;
-    for (const p of [/(?:date[:\s]*)(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i, /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})/]) {
-      const m = text.match(p);
-      if (m) {
-        try {
-          const parts = m[1].split(/[\/\-\.]/);
-          if (parts.length === 3) {
-            const [a, b, c] = parts;
-            date = c.length === 4 ? `${c}-${b.padStart(2,'0')}-${a.padStart(2,'0')}` : m[1];
-          }
-        } catch { date = m[1]; }
-        break;
+    // Stratégie B — "Mode règlement → premier montant ≥5 → Arrêtée"
+    if (!amountHT || amountHT < 5) {
+      const modeIdx = lines.findIndex(l => /mode\s*r[eè]glement/i.test(l));
+      const arreteeIdx = lines.findIndex(l => /arrêt/i.test(l));
+      const htEnd = arreteeIdx !== -1 ? arreteeIdx : Math.min(modeIdx + 8, lines.length);
+      if (modeIdx !== -1) {
+        const candidates = lines.slice(modeIdx + 1, htEnd)
+            .filter(l => isAmountLine(l))
+            .map(l => toNum(l))
+            .filter(n => n >= 5);
+        if (candidates.length) amountHT = candidates[0]; // premier = Total HT
       }
     }
 
-    // Référence facture
+    // Stratégie C : fallback fenêtre classique
+    if (!amountHT) {
+      amountHT =
+          extractWindow(/total\s*ht\b/i, /total\s*tva|total\s*ttc|net\s*[àa]\s*payer|timbre|fodec/i, 'max', 5) ??
+          extractWindow(/montant\s*ht\b/i, /total\s*tva|total\s*ttc|net/i, 'max', 5) ??
+          null;
+    }
+
+    // Sanity check : HT ne peut pas être > TTC
+    if (amountHT && amount && amountHT > amount) amountHT = null;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  3. TAUX TVA DOMINANT
+    // ═══════════════════════════════════════════════════════════════
+    let tva: number | null = null;
+
+    const tvaExplicit =
+        text.match(/taux\s*tva[:\s]*(\d+)/i) ??
+        text.match(/tva\s*(?:à|au|de)?\s*(\d+)\s*%/i) ??
+        text.match(/vat\s*(?:rate)?\s*[:\s]*(\d+)\s*%/i);
+
+    if (tvaExplicit) {
+      tva = parseInt(tvaExplicit[1]);
+    } else {
+      // Taux courants Tunisie + France/EU — pondéré par présence avec "%"
+      const RATES = [5, 7, 10, 13, 14, 19, 20, 21];
+      const freq: Record<number, number> = {};
+      for (const r of RATES) {
+        const withPct  = (text.match(new RegExp(`\\b${r}\\s*%`, 'g')) || []).length;
+        const withoutPct = (text.match(new RegExp(`\\b${r}\\b`, 'g')) || []).length;
+        freq[r] = withPct * 2 + withoutPct * 0.5; // pondération: "20%" >> "20"
+      }
+      const best = RATES.filter(r => freq[r] > 0).sort((a, b) => freq[b] - freq[a])[0];
+      if (best !== undefined) tva = best;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  4. DATE
+    // ═══════════════════════════════════════════════════════════════
+    let date: string | null = null;
+
+    // Zone préférentielle : ligne(s) après un label "date"
+    const dateLabelIdx = lines.findIndex(l =>
+        /^(date\s*(?:de\s*)?(?:facturation|facture|émission)?|invoice\s*date|date)$/i.test(l),
+    );
+    const dateSearchArea = dateLabelIdx !== -1
+        ? lines.slice(dateLabelIdx, dateLabelIdx + 4).join(' ')
+        : text;
+
+    const DATE_PATTERNS: [RegExp, (m: RegExpMatchArray) => string][] = [
+      [/\b(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{4})\b/, m => `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`],
+      [/\b(\d{4})-(\d{2})-(\d{2})\b/,                    m => `${m[1]}-${m[2]}-${m[3]}`],
+      [/\b(\d{2})[\/\-](\d{4})\b/,                        m => `${m[2]}-${m[1].padStart(2,'0')}-01`],
+    ];
+
+    for (const [re, fmt] of DATE_PATTERNS) {
+      const m = dateSearchArea.match(re);
+      if (m) { date = fmt(m); break; }
+    }
+    // Fallback : chercher dans tout le texte
+    if (!date) {
+      for (const [re, fmt] of DATE_PATTERNS) {
+        const m = text.match(re);
+        if (m) { date = fmt(m); break; }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  5. NUMÉRO DE FACTURE
+    // ═══════════════════════════════════════════════════════════════
     let source: string | null = null;
-    const sourceMatch = text.match(/(?:facture\s*n[°o]?|invoice\s*#?|bon\s*n[°o]?)[:\s]*([A-Z0-9\-\/]+)/i);
-    if (sourceMatch) source = sourceMatch[1].trim();
 
-    // Description
+    // Cas split-ligne : label seul sur une ligne, valeur sur la suivante
+    const SPLIT_LABEL_RE = [
+      /^num[eé]ro\s*(?:de\s*)?facture$/i,
+      /^invoice\s*(?:number|no\.?|#)$/i,
+      /^n[°o](?:\s*facture)?$/i,
+      /^r[eé]f(?:[eé]rence)?$/i,
+    ];
+    for (const re of SPLIT_LABEL_RE) {
+      const idx = lines.findIndex(l => re.test(l));
+      if (idx !== -1) {
+        for (let i = idx + 1; i < Math.min(idx + 4, lines.length); i++) {
+          if (/^[A-Z0-9\-\/]{1,20}$/i.test(lines[i]) && !/^\d{8,}$/.test(lines[i])) {
+            source = lines[i]; break;
+          }
+        }
+      }
+      if (source) break;
+    }
+
+    // Inline : "Facture N° 143", "N° : 68", "Invoice #143"
+    if (!source) {
+      const INLINE_RE = [
+        /facture\s*n[°o]?\s*[:\s]*([A-Z0-9\-\/]{1,20})/i,
+        /invoice\s*(?:no\.?|n°|#)?\s*[:\s]*([A-Z0-9\-\/]{1,20})/i,
+        /n[°o]\s*[:\s]*(\d{1,10})/i,
+        /bon\s*(?:de\s*commande\s*)?n[°o]?\s*[:\s]*([A-Z0-9\-\/]{1,20})/i,
+        /r[eé]f(?:[eé]rence)?\s*[:\s]*([A-Z0-9\-\/]{1,20})/i,
+      ];
+      for (const p of INLINE_RE) {
+        const m = text.match(p);
+        if (m) {
+          const c = m[1].trim();
+          if (
+              c.length <= 20 &&
+              !/^(date|page|tel|mf|client|adresse|siren|siret|tva)$/i.test(c) &&
+              !/^\d{8,}$/.test(c)
+          ) { source = c; break; }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  6. DESCRIPTION
+    // ═══════════════════════════════════════════════════════════════
     let description = '';
-    for (const p of [/(?:objet|désignation|description|libellé)[:\s]*(.+)/i]) {
-      const m = text.match(p);
-      if (m) { description = m[1].trim().substring(0, 100); break; }
-    }
-    if (!description && lines.length > 0) {
-      description = (lines.find(l => l.length > 10 && !/^\d/.test(l)) || lines[0]).substring(0, 100);
+
+    const SKIP_DESC = /^(facture|invoice|date|total|net|tva|vat|client|adresse|address|tel|email|mf|page|n°|mode|timbre|fodec|base|arrêt|désignation|description|quantit|unit[eé]|prix|price|montant|amount|taux|rate|règlement|payment|iban|bic|swift|siren|siret|logo|vendeur|seller|ref|echéance|paiement|coordonnées|banque|détails|informations|service|garantie)/i;
+
+    // Chercher "Vendeur" ou "Seller" → ligne suivante = nom société
+    const vendeurIdx = lines.findIndex(l => /^(vendeur|seller|fournisseur|[eé]metteur)$/i.test(l));
+    const companyLine = vendeurIdx !== -1
+        ? lines[vendeurIdx + 1]
+        : lines.find(l =>
+            l.length >= 2 && l.length <= 60 &&
+            /[A-Za-z]{2,}/.test(l) &&
+            !SKIP_DESC.test(l) &&
+            !/^\d[\d\s,./€$]*$/.test(l) &&
+            !/^[+\d\s().\-]{7,}$/.test(l),
+        );
+
+    if (companyLine && source) description = `Facture ${companyLine} N°${source}`;
+    else if (companyLine)      description = companyLine.substring(0, 100);
+
+    if (!description) {
+      for (const label of [/^désignation$/i, /^description$/i, /^libellé$/i, /^objet$/i]) {
+        const idx = lines.findIndex(l => label.test(l));
+        if (idx !== -1 && lines[idx + 1]) { description = lines[idx + 1].substring(0, 100); break; }
+      }
     }
 
-    // Type de charge
-    let type = 'other';
+    if (!description) description = 'Charge (OCR)';
+
+    // ═══════════════════════════════════════════════════════════════
+    //  7. TYPE DE CHARGE
+    // ═══════════════════════════════════════════════════════════════
     const lower = text.toLowerCase();
-    if (/loyer|location|bail/.test(lower)) type = 'rent';
-    else if (/salaire|paie|rémunération/.test(lower)) type = 'salary';
-    else if (/electricité|eau|gaz|téléphone|internet|sonede|steg/.test(lower)) type = 'utilities';
-    else if (/équipement|matériel|mobilier|informatique/.test(lower)) type = 'equipment';
-    else if (/publicité|marketing|communication/.test(lower)) type = 'marketing';
-    else if (/assurance/.test(lower)) type = 'insurance';
-    else if (/taxe|impôt|tva|patente/.test(lower)) type = 'tax';
+    const TYPE_RULES: [RegExp, string][] = [
+      [/loyer|location\s+local|bail\b/,                                                           'rent'],
+      [/salaire|paie\b|rémunération|fiche\s+de\s+paie|main[\s\-]d.œuvre/,                        'salary'],
+      [/electricité|steg\b|eau\b|sonede\b|gaz\b|téléphone\b|internet\b|fibre\b|edf\b|engie/,    'utilities'],
+      [/souris|clavier|écran|pc\b|ordinateur|informatique|matériel|équipement|boitier|chargeur|câble|disque|mémoire|cartouche|imprimante|toner|usb\b|sata\b|smartphone|tablette/, 'equipment'],
+      [/publicité|marketing|impression\b|communication|affiche|flyer|banner|branding/,            'marketing'],
+      [/assurance\b/,                                                                              'insurance'],
+      [/taxe\b|impôt|patente\b|fodec\b|contribution/,                                            'tax'],
+      [/comptab|expert[\s\-]comptable|commissaire|audit/,                                         'accounting'],
+      [/carburant|essence\b|gasoil\b|diesel\b/,                                                   'fuel'],
+    ];
 
+    let type = 'other';
+    for (const [re, t] of TYPE_RULES) {
+      if (re.test(lower)) { type = t; break; }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  RÉSULTAT
+    // ═══════════════════════════════════════════════════════════════
     return {
       rawText: text,
-      suggestion: { description: description || 'Charge (OCR)', amount, date, source, type, tva, amountHT },
+      suggestion: { description, amount, amountHT, date, source, type, tva },
     };
   }
+  /// =======================================================
+
+
+
 
   async getOcrStatus(companyId: string) {
     const company = await this.companyModel.findById(companyId).lean();

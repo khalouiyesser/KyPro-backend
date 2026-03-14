@@ -44,7 +44,12 @@ export class ProductsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: any, @Request() req) {
+   update(@Param('id') id: string, @Body() dto: any, @Request() req) {
+
+    // console.log(`[ProductsController] update product ${id} for company ${req.user.companyId} by req ${req.user.userId} (${req.user.name}) with data:`, dto);
+
+
+
     return this.productsService.update(
         id,
         req.user.companyId,

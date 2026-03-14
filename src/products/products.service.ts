@@ -87,15 +87,25 @@ export class ProductsService {
 
   // ── Modifier un produit ───────────────────────────────────────────────────
   async update(id: string, companyId: string, dto: any, userId: string, userName: string): Promise<ProductDocument> {
+    console.log(dto)
+
+    for (const supplierId of dto['supplierIds'] || []) {  // ✅ for...of, not for...in
+      await this.fournisseursService.addProduct(
+          String(supplierId),
+          String(id),
+          companyId,
+      );
+    }
+
     const p = await this.productModel.findOneAndUpdate(
         { _id: new Types.ObjectId(id), companyId: new Types.ObjectId(companyId) },
         { ...dto, updatedBy: new Types.ObjectId(userId), updatedByName: userName },
         { new: true },
     );
+
     if (!p) throw new NotFoundException('Produit introuvable');
     return p;
   }
-
   // ── Supprimer un produit ──────────────────────────────────────────────────
   async remove(id: string, companyId: string): Promise<void> {
     const p = await this.productModel.findOneAndDelete({

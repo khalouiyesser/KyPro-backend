@@ -324,8 +324,8 @@ export class FournisseursService {
       productId: string,
       companyId: string,
   ): Promise<FournisseurDocument> {
-    if (!Types.ObjectId.isValid(fournisseurId) || !Types.ObjectId.isValid(productId))
-      throw new BadRequestException('ID fournisseur ou produit invalide');
+    // if (!Types.ObjectId.isValid(fournisseurId) || !Types.ObjectId.isValid(productId))
+    //   throw new BadRequestException('ID fournisseur ou produit invalide');
 
     const updated = await this.fournisseurModel
         .findOneAndUpdate(
@@ -356,4 +356,7 @@ export class FournisseursService {
     if (!updated) throw new NotFoundException('Fournisseur introuvable');
     return updated;
   }
+
+
+
 }
