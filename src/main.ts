@@ -3,10 +3,16 @@ import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import {urlencoded} from "express";
+import {json} from "node:stream/consumers";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const logger = new Logger('Bootstrap');
+  const express = require('express');
+
+  app.use(express.json({ limit: '10mb' }));                // ← syntaxe corrigée
+  app.use(urlencoded({ limit: '10mb', extended: true })); // ← AJOUTER
 
   app.enableCors({
     origin: '*',
