@@ -1,7 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
     IsString, IsUrl, IsNotEmpty, IsIn, IsOptional,
-    IsNumber, IsBoolean, IsArray, ValidateNested, Min, MaxLength,
+    IsNumber, IsBoolean, IsArray, ValidateNested,
+    Min, MaxLength, IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -29,93 +30,150 @@ export class OcrFromBase64Dto {
     @ApiProperty({
         description: 'Type MIME du fichier',
         enum: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'],
-        example: 'application/pdf',
+        example: 'image/png',
     })
     @IsIn(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'])
     mimeType: string;
 }
 
-// ── Charge DTOs ───────────────────────────────────────────────────────────────
+// ── Ligne de facturation ──────────────────────────────────────────────────────
 
 export class ChargeItemDto {
-    @ApiProperty({ description: 'Désignation de la ligne', example: 'Souris USB' })
+    @ApiProperty({
+        description: 'Désignation de la ligne (produit ou service)',
+        example: 'SOURIS RAMITECH USB TB220',
+    })
     @IsString()
     @IsNotEmpty()
     @MaxLength(200)
     label: string;
 
-    @ApiProperty({ description: 'Montant TTC de la ligne', example: 15.0 })
+    @ApiProperty({
+        description: 'Montant TTC de la ligne',
+        example: 8.0,
+    })
     @IsNumber()
     @Min(0)
     total: number;
 }
 
+// ── Créer / Mettre à jour une charge ─────────────────────────────────────────
+
+const CHARGE_TYPES = [
+    'rent', 'salary', 'utilities', 'equipment',
+    'marketing', 'tax', 'insurance', 'accounting', 'fuel', 'other',
+] as const;
+
+const CURRENCIES = ['TND', 'EUR', 'USD', 'other'] as const;
+
 export class CreateChargeDto {
-    @ApiProperty({ example: 'Facture E-INFO N°68' })
+    @ApiProperty({
+        description: 'Description / nom du fournisseur',
+        example: 'Facture E-INFO N°68',
+        maxLength: 200,
+    })
     @IsString()
     @IsNotEmpty()
     @MaxLength(200)
     description: string;
 
-    @ApiProperty({ example: 279.0 })
+    @ApiProperty({
+        description: 'Montant TTC total (Net à payer)',
+        example: 279.0,
+        minimum: 0,
+    })
     @IsNumber()
     @Min(0)
     amount: number;
 
-    @ApiProperty({ required: false, example: 273.682 })
+    @ApiPropertyOptional({
+        description: 'Montant HT total',
+        example: 273.682,
+        minimum: 0,
+    })
     @IsOptional()
     @IsNumber()
     @Min(0)
     amountHT?: number;
 
-    @ApiProperty({ required: false, example: 7 })
+    @ApiPropertyOptional({
+        description: 'Taux TVA (%)',
+        example: 7,
+        minimum: 0,
+        maximum: 100,
+        default: 0,
+    })
     @IsOptional()
     @IsNumber()
     @Min(0)
     tva?: number;
 
-    @ApiProperty({ example: '2024-03-16' })
+    @ApiProperty({
+        description: 'Date de la facture (YYYY-MM-DD)',
+        example: '2024-03-16',
+    })
     @IsString()
     @IsNotEmpty()
     date: string;
 
-    @ApiProperty({
-        required: false,
-        enum: ['rent','salary','utilities','equipment','marketing',
-            'tax','insurance','accounting','fuel','other'],
+    @ApiPropertyOptional({
+        description: 'Type de charge',
+        enum: CHARGE_TYPES,
         default: 'other',
     })
     @IsOptional()
-    @IsIn(['rent','salary','utilities','equipment','marketing',
-        'tax','insurance','accounting','fuel','other'])
+    @IsIn(CHARGE_TYPES)
     type?: string;
 
-    @ApiProperty({ required: false, example: '68' })
+    @ApiPropertyOptional({
+        description: 'Numéro de facture ou référence',
+        example: '68',
+    })
     @IsOptional()
     @IsString()
     source?: string;
 
-    @ApiProperty({ required: false })
+    @ApiPropertyOptional({
+        description: 'URL ou base64 de la facture',
+        example: 'https://example.com/facture.png',
+    })
     @IsOptional()
     @IsString()
     imageUrl?: string;
 
-    @ApiProperty({ required: false })
+    @ApiPropertyOptional({
+        description: 'Notes libres',
+        example: 'Achat matériel informatique',
+    })
     @IsOptional()
     @IsString()
     notes?: string;
 
-    @ApiProperty({ required: false, enum: ['TND','EUR','USD','other'], default: 'TND' })
+    @ApiPropertyOptional({
+        description: 'Devise',
+        enum: CURRENCIES,
+        default: 'TND',
+    })
     @IsOptional()
-    @IsIn(['TND','EUR','USD','other'])
+    @IsIn(CURRENCIES)
     currency?: string;
 
-    @ApiProperty({ required: false, default: false })
+    @ApiPropertyOptional({
+        description: 'Est un devis (true) ou une facture (false)',
+        default: false,
+    })
     @IsOptional()
     @IsBoolean()
     isDevis?: boolean;
 
-    @ApiProperty({ required: false, type: [ChargeItemDto] })
+    @ApiPropertyOptional({
+        description: 'Lignes de facturation (issues de l\'OCR ou saisies manuellement)',
+        type: [ChargeItemDto],
+        example: [
+            { label: 'SOURIS RAMITECH USB TB220', total: 8.0 },
+            { label: 'SOURIS SANS FILS W55 NOIR', total: 15.0 },
+        ],
+    })
     @IsOptional()
     @IsArray()
     @ValidateNested({ each: true })
