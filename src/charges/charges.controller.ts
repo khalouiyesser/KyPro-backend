@@ -36,6 +36,7 @@ export class ChargesController {
   @ApiResponse({ status: 400, description: 'Données invalides' })
   @ApiResponse({ status: 401, description: 'Non authentifié' })
   create(@Body() dto: CreateChargeDto, @Request() req) {
+    console.log('Creating charge with data:', dto);
     return this.chargesService.create(
         dto,
         req.user.userId,

@@ -13,7 +13,7 @@ export class Client {
   @Prop({ default: '' }) notes: string;
   @Prop({ type: Types.ObjectId, ref: 'Company', required: true }) companyId: Types.ObjectId;
   @Prop({ type: Types.ObjectId, ref: 'User', required: true }) createdBy: Types.ObjectId;
-  @Prop() createdByName: string;
+  @Prop({ default: 'admin' }) createdByName: string;
   @Prop({ type: Types.ObjectId, ref: 'User' }) updatedBy: Types.ObjectId;
   @Prop() updatedByName: string;
 }
