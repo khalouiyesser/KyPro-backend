@@ -25,8 +25,6 @@ import { ReturnsModule } from './returns/returns.module';
 import { OcrModule } from './ocr/ocr.module';
 import { AdminModule } from './admin/admin.module';
 import { CommonModule } from './common/common.module';
-import { RasModule } from './ras/ras.module';
-
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -61,7 +59,6 @@ import { RasModule } from './ras/ras.module';
     ReturnsModule,
     OcrModule,
     AdminModule,
-    RasModule,
   ],
 })
 export class AppModule {}
