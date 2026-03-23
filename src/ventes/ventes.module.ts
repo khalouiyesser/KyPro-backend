@@ -2,7 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { VentesService } from './ventes.service';
 import { VenteController } from './vente.controller';
-import { Vente, Venteschema } from './vente.schema';
+import {Vente, VenteSchema} from './vente.schema';
 import { ProductsModule } from '../products/products.module';
 import { ClientsModule } from '../clients/clients.module';
 import { PaymentVenteModule } from '../payment-vente/payment-vente.module';
@@ -12,7 +12,7 @@ import { ExportModule } from '../export/export.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Vente.name, schema: Venteschema }]),
+    MongooseModule.forFeature([{ name: Vente.name, schema: VenteSchema }]),
     ProductsModule,
     forwardRef(() => ClientsModule),
     forwardRef(() => PaymentVenteModule),

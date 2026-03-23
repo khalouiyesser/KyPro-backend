@@ -2,14 +2,14 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AccountingService } from './accounting.service';
 import { AccountingController } from './accounting.controller';
-import { Vente, Venteschema } from '../ventes/vente.schema';
+import { Vente, VenteSchema } from '../ventes/vente.schema';
 import { Purchase, PurchaseSchema } from '../purchases/purchase.schema';
 import { Charge, ChargeSchema } from '../charges/charge.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: Vente.name, schema: Venteschema },
+      { name: Vente.name, schema: VenteSchema },
       { name: Purchase.name, schema: PurchaseSchema },
       { name: Charge.name, schema: ChargeSchema },
     ]),

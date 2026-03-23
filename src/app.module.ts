@@ -25,6 +25,7 @@ import { ReturnsModule } from './returns/returns.module';
 import { OcrModule } from './ocr/ocr.module';
 import { AdminModule } from './admin/admin.module';
 import { CommonModule } from './common/common.module';
+import { RasModule } from './ras/ras.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { CommonModule } from './common/common.module';
     ReturnsModule,
     OcrModule,
     AdminModule,
+    RasModule,
   ],
 })
 export class AppModule {}

@@ -206,44 +206,301 @@ export class ExportService {
   // ══════════════════════════════════════════════════════════
   //  DEVIS PDF
   // ══════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════════════
+//  generateQuotePdf — Version redessinée
+//  • Design moderne avec bande colorée latérale
+//  • TVA affichée par ligne ET dans le bloc récap
+//  • Numéro de devis, validité, adresse client
+//  • Tableau TVA par taux (récap comptable)
+// ══════════════════════════════════════════════════════════════════════════════
+
   async generateQuotePdf(quote: any, companyId: string): Promise<Buffer> {
     const company = await this.getCompany(companyId);
+
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 40, bufferPages: true, size: 'A4' });
+      const doc = new PDFDocument({ margin: 0, bufferPages: true, size: 'A4' });
       const buffers: Buffer[] = [];
-      doc.on('data', d => buffers.push(d));
-      doc.on('end', () => resolve(Buffer.concat(buffers)));
+      doc.on('data',  (d) => buffers.push(d));
+      doc.on('end',   () => resolve(Buffer.concat(buffers)));
       doc.on('error', reject);
 
-      this.addPdfHeader(doc, company, 'DEVIS').then(() => {
-        doc.fontSize(10).font('Helvetica');
-        doc.text(`Devis N°: ${quote._id?.toString().slice(-6).toUpperCase()}`, 40);
-        doc.text(`Client: ${quote.clientName || '—'}`, 40);
-        doc.text(`Cree par: ${quote.createdByName || '—'}`, 40);
-        doc.text(`Date: ${this.fmtDate(quote.createdAt)}`, 40);
-        if (quote.validUntil) doc.text(`Valable jusqu'au: ${this.fmtDate(quote.validUntil)}`, 40);
+      const W = doc.page.width;   // 595
+      const H = doc.page.height;  // 842
+      const MARGIN = 40;
 
-        doc.moveDown(1);
-        const tableTop = doc.y;
-        const cols = [40, 200, 310, 380, 450, 510];
-        const headers = ['#', 'Designation', 'Qte', 'PU HT', 'TVA%', 'Total TTC'];
-        doc.rect(40, tableTop, doc.page.width - 80, 22).fill('#1e3a5f');
-        headers.forEach((h, i) => doc.fillColor('#fff').font('Helvetica-Bold').fontSize(9).text(h, cols[i], tableTop + 6, { width: (cols[i+1] || 560) - cols[i] }));
-        doc.fillColor('#000').font('Helvetica').fontSize(9);
+      // ── Palette ──────────────────────────────────────────────────────────────
+      const PRIMARY   = '#1B3F72'; // Bleu marine
+      const ACCENT    = '#2E7CF6'; // Bleu vif
+      const LIGHT_BG  = '#F4F7FB'; // Gris très clair
+      const TEXT_DARK = '#1A1A2E';
+      const TEXT_GRAY = '#6B7280';
+      const RED       = '#DC2626';
+      const GREEN     = '#16A34A';
 
-        (quote.items || []).forEach((item: any, idx: number) => {
-          const rowY = tableTop + 22 + idx * 20;
-          if (idx % 2 === 0) doc.rect(40, rowY, doc.page.width - 80, 20).fill('#f9fafb');
-          doc.fillColor('#000').text(`${idx+1}`, cols[0], rowY+5).text(item.productName||'', cols[1], rowY+5, {width:100}).text(`${item.quantity}`, cols[2], rowY+5).text(this.fmt(item.unitPrice), cols[3], rowY+5).text(`${item.tva||0}%`, cols[4], rowY+5).text(this.fmt(item.totalTTC), cols[5], rowY+5);
-        });
+      // ════════════════════════════════════════════════════════════════════════
+      //  HEADER
+      // ════════════════════════════════════════════════════════════════════════
+      // Bande de fond pleine largeur
+      doc.rect(0, 0, W, 120).fill(PRIMARY);
 
-        const totY = tableTop + 22 + (quote.items?.length || 0) * 20 + 15;
-        doc.rect(350, totY, 210, 60).stroke('#1e3a5f');
-        doc.fontSize(10).font('Helvetica').text('Total HT:', 360, totY+8).text(this.fmt(quote.totalHT), 480, totY+8).font('Helvetica-Bold').fontSize(12).text('Total TTC:', 360, totY+30).text(this.fmt(quote.totalTTC), 480, totY+30);
-        if (quote.notes) doc.moveDown(6).fontSize(9).font('Helvetica-Bold').text('Notes:').font('Helvetica').text(quote.notes);
-        this.addPdfFooter(doc, company);
-        doc.end();
+      // Barre d'accent fine en bas du header
+      doc.rect(0, 118, W, 4).fill(ACCENT);
+
+      // Nom de la société
+      doc.fillColor('#FFFFFF')
+          .fontSize(22).font('Helvetica-Bold')
+          .text(company?.name || 'ERP System', MARGIN, 22, { width: W / 2 - MARGIN });
+
+      // Infos société (adresse, tel, email, MF) — colonne gauche
+      doc.fontSize(8).font('Helvetica').fillColor('#CBD5E1');
+      let infoY = 50;
+      if (company?.address) { doc.text(company.address, MARGIN, infoY); infoY += 11; }
+      if (company?.phone)   { doc.text(`Tél : ${company.phone}`, MARGIN, infoY); infoY += 11; }
+      if (company?.email)   { doc.text(company.email, MARGIN, infoY); infoY += 11; }
+      if (company?.matriculeFiscal) doc.text(`MF : ${company.matriculeFiscal}`, MARGIN, infoY);
+
+      // Titre DEVIS — colonne droite
+      doc.fontSize(36).font('Helvetica-Bold').fillColor('#FFFFFF')
+          .text('DEVIS', 0, 30, { align: 'right', width: W - MARGIN });
+
+      // Numéro et date — colonne droite
+      const quoteNum = quote.quoteNumber || quote._id?.toString().slice(-8).toUpperCase();
+      doc.fontSize(9).font('Helvetica').fillColor('#93C5FD')
+          .text(`N° ${quoteNum}`, 0, 72, { align: 'right', width: W - MARGIN })
+          .text(`Date : ${this.fmtDate(quote.createdAt)}`, 0, 84, { align: 'right', width: W - MARGIN });
+      if (quote.validUntil) {
+        doc.text(`Valable jusqu'au : ${this.fmtDate(quote.validUntil)}`, 0, 96, { align: 'right', width: W - MARGIN });
+      }
+
+      // ════════════════════════════════════════════════════════════════════════
+      //  BLOC CLIENT + INFOS DEVIS
+      // ════════════════════════════════════════════════════════════════════════
+      const blockY = 136;
+
+      // Bloc client (gauche)
+      doc.rect(MARGIN, blockY, (W / 2) - MARGIN - 8, 90).fill(LIGHT_BG);
+      doc.fillColor(PRIMARY).fontSize(8).font('Helvetica-Bold')
+          .text('FACTURER À', MARGIN + 10, blockY + 10);
+
+      doc.fillColor(TEXT_DARK).fontSize(11).font('Helvetica-Bold')
+          .text(quote.clientName || '—', MARGIN + 10, blockY + 24, { width: (W / 2) - MARGIN - 28 });
+
+      doc.fontSize(8.5).font('Helvetica').fillColor(TEXT_GRAY);
+      let clientInfoY = blockY + 40;
+      if (quote.clientAddress) {
+        doc.text(quote.clientAddress, MARGIN + 10, clientInfoY, { width: (W / 2) - MARGIN - 28 });
+        clientInfoY += 11;
+      }
+      if (quote.clientPhone) {
+        doc.text(`Tél : ${quote.clientPhone}`, MARGIN + 10, clientInfoY); clientInfoY += 11;
+      }
+      if (quote.clientEmail) {
+        doc.text(quote.clientEmail, MARGIN + 10, clientInfoY);
+      }
+
+      // Bloc infos devis (droite)
+      const rightBlockX = W / 2 + 8;
+      const rightBlockW = W - MARGIN - rightBlockX;
+      doc.rect(rightBlockX, blockY, rightBlockW, 90).fill(LIGHT_BG);
+
+      doc.fillColor(PRIMARY).fontSize(8).font('Helvetica-Bold')
+          .text('INFORMATIONS DU DEVIS', rightBlockX + 10, blockY + 10);
+
+      const infoRows = [
+        ['Créé par',   quote.createdByName || '—'],
+        ['Statut',     (quote.status || 'draft').toUpperCase()],
+        ['Ref.',       quoteNum],
+      ];
+      if (quote.validUntil) infoRows.push(['Expiration', this.fmtDate(quote.validUntil)]);
+
+      let infoRowY = blockY + 26;
+      doc.fontSize(8.5);
+      infoRows.forEach(([label, value]) => {
+        doc.font('Helvetica').fillColor(TEXT_GRAY).text(label, rightBlockX + 10, infoRowY);
+        doc.font('Helvetica-Bold').fillColor(TEXT_DARK).text(value, rightBlockX + 80, infoRowY);
+        infoRowY += 14;
       });
+
+      // ════════════════════════════════════════════════════════════════════════
+      //  TABLEAU DES LIGNES
+      // ════════════════════════════════════════════════════════════════════════
+      const tableTop = blockY + 106;
+
+      // En-têtes colonnes
+      const cols = {
+        num:   { x: MARGIN,       w: 22  },
+        name:  { x: MARGIN + 22,  w: 175 },
+        qty:   { x: MARGIN + 197, w: 45  },
+        price: { x: MARGIN + 242, w: 75  },
+        tva:   { x: MARGIN + 317, w: 45  },
+        ht:    { x: MARGIN + 362, w: 75  },
+        ttc:   { x: MARGIN + 437, w: W - MARGIN - MARGIN - 437 },
+      };
+
+      // Fond header tableau
+      doc.rect(MARGIN, tableTop, W - 2 * MARGIN, 22).fill(PRIMARY);
+
+      const headers: [keyof typeof cols, string, string][] = [
+        ['num',   '#',          'center'],
+        ['name',  'Désignation','left'],
+        ['qty',   'Qté',        'center'],
+        ['price', 'P.U. HT',    'right'],
+        ['tva',   'TVA %',      'center'],
+        ['ht',    'Total HT',   'right'],
+        ['ttc',   'Total TTC',  'right'],
+      ];
+
+      headers.forEach(([col, label, align]) => {
+        doc.fillColor('#FFFFFF').fontSize(8).font('Helvetica-Bold')
+            .text(label, cols[col].x + 3, tableTop + 7, {
+              width: cols[col].w - 6,
+              align: align as any,
+            });
+      });
+
+      // Lignes
+      const items: any[] = quote.items || [];
+      let curY = tableTop + 22;
+
+      items.forEach((item: any, idx: number) => {
+        const rowH = 22;
+        // Zébrage
+        if (idx % 2 === 0) {
+          doc.rect(MARGIN, curY, W - 2 * MARGIN, rowH).fill(LIGHT_BG);
+        }
+
+        // Séparateur bas de ligne
+        doc.rect(MARGIN, curY + rowH - 0.5, W - 2 * MARGIN, 0.5).fill('#E5E7EB');
+
+        doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica');
+
+        const totalTVA = item.totalTVA ?? (item.totalHT * (item.tva || 0) / 100);
+
+        doc.text(`${idx + 1}`, cols.num.x + 3, curY + 7,   { width: cols.num.w - 6,   align: 'center' });
+        doc.font('Helvetica-Bold')
+            .text(item.productName || '—', cols.name.x + 3, curY + 7, { width: cols.name.w - 6, align: 'left' });
+        doc.font('Helvetica')
+            .text(`${item.quantity}`, cols.qty.x + 3, curY + 7, { width: cols.qty.w - 6, align: 'center' })
+            .text(this.fmt(item.unitPrice), cols.price.x + 3, curY + 7, { width: cols.price.w - 6, align: 'right' })
+            .text(`${item.tva ?? 19} %`, cols.tva.x + 3, curY + 7,  { width: cols.tva.w - 6, align: 'center' })
+            .text(this.fmt(item.totalHT),  cols.ht.x + 3, curY + 7,  { width: cols.ht.w - 6,  align: 'right' })
+            .text(this.fmt(item.totalTTC), cols.ttc.x + 3, curY + 7, { width: cols.ttc.w - 6, align: 'right' });
+
+        curY += rowH;
+      });
+
+      // Ligne de clôture tableau
+      doc.rect(MARGIN, curY, W - 2 * MARGIN, 1.5).fill(PRIMARY);
+      curY += 10;
+
+      // ════════════════════════════════════════════════════════════════════════
+      //  BLOC TOTAUX (droite) + TABLEAU TVA PAR TAUX (gauche)
+      // ════════════════════════════════════════════════════════════════════════
+      const totalBlockW = 200;
+      const totalBlockX = W - MARGIN - totalBlockW;
+      let totalRowY = curY + 6;
+
+      // Fond bloc totaux
+      doc.rect(totalBlockX - 5, totalRowY - 6, totalBlockW + 5, 95).fill(LIGHT_BG);
+
+      const totalTVA   = quote.totalTVA ?? (quote.totalTTC - quote.totalHT);
+      const totalsRows = [
+        { label: 'Total HT',  value: this.fmt(quote.totalHT),  bold: false, color: TEXT_DARK },
+        { label: 'Total TVA', value: this.fmt(totalTVA),        bold: false, color: TEXT_DARK },
+        { label: 'Total TTC', value: this.fmt(quote.totalTTC),  bold: true,  color: PRIMARY   },
+      ];
+
+      totalsRows.forEach(({ label, value, bold, color }) => {
+        doc.fontSize(bold ? 11 : 9)
+            .font(bold ? 'Helvetica-Bold' : 'Helvetica')
+            .fillColor(TEXT_GRAY)
+            .text(label, totalBlockX, totalRowY, { width: 90 });
+        doc.fillColor(color)
+            .text(value, totalBlockX + 95, totalRowY, { width: totalBlockW - 95, align: 'right' });
+        totalRowY += bold ? 22 : 16;
+        if (bold) {
+          // Séparateur au-dessus du Total TTC
+          doc.rect(totalBlockX, totalRowY - 22, totalBlockW, 0.7).fill(ACCENT);
+        }
+      });
+
+      // Récap TVA par taux (gauche, si plusieurs taux)
+      const tvaByRate: Record<number, { base: number; montant: number }> = {};
+      items.forEach((item: any) => {
+        const rate   = item.tva ?? 19;
+        const tvaAmt = item.totalTVA ?? (item.totalHT * rate / 100);
+        if (!tvaByRate[rate]) tvaByRate[rate] = { base: 0, montant: 0 };
+        tvaByRate[rate].base    += item.totalHT;
+        tvaByRate[rate].montant += tvaAmt;
+      });
+
+      const rates = Object.keys(tvaByRate);
+      if (rates.length > 0) {
+        const tvaSummaryX = MARGIN;
+        let tvaSummaryY   = curY + 6;
+
+        doc.rect(tvaSummaryX, tvaSummaryY, 230, 20 + rates.length * 16).fill(LIGHT_BG);
+        doc.fillColor(PRIMARY).fontSize(8).font('Helvetica-Bold')
+            .text('RÉCAPITULATIF TVA', tvaSummaryX + 8, tvaSummaryY + 6);
+        tvaSummaryY += 20;
+
+        // Entête mini-tableau TVA
+        doc.fillColor(TEXT_GRAY).fontSize(7.5).font('Helvetica-Bold')
+            .text('Taux', tvaSummaryX + 8, tvaSummaryY)
+            .text('Base HT',  tvaSummaryX + 55, tvaSummaryY)
+            .text('Montant TVA', tvaSummaryX + 130, tvaSummaryY);
+        tvaSummaryY += 12;
+
+        rates.forEach((rate) => {
+          const { base, montant } = tvaByRate[+rate];
+          doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica')
+              .text(`${rate} %`,          tvaSummaryX + 8,   tvaSummaryY)
+              .text(this.fmt(base),        tvaSummaryX + 55,  tvaSummaryY)
+              .text(this.fmt(montant),     tvaSummaryX + 130, tvaSummaryY);
+          tvaSummaryY += 14;
+        });
+      }
+
+      // ════════════════════════════════════════════════════════════════════════
+      //  NOTES
+      // ════════════════════════════════════════════════════════════════════════
+      if (quote.notes) {
+        const notesY = Math.max(totalRowY, curY + 110) + 16;
+        doc.rect(MARGIN, notesY, W - 2 * MARGIN, 1).fill('#E5E7EB');
+        doc.fillColor(PRIMARY).fontSize(8).font('Helvetica-Bold')
+            .text('NOTES & CONDITIONS', MARGIN, notesY + 8);
+        doc.fillColor(TEXT_GRAY).fontSize(8.5).font('Helvetica')
+            .text(quote.notes, MARGIN, notesY + 22, { width: W - 2 * MARGIN });
+      }
+
+      // ════════════════════════════════════════════════════════════════════════
+      //  FOOTER multi-page
+      // ════════════════════════════════════════════════════════════════════════
+      const pageCount = doc.bufferedPageRange().count;
+      for (let i = 0; i < pageCount; i++) {
+        doc.switchToPage(i);
+        const fy = H - 36;
+
+        doc.rect(0, fy - 4, W, 40).fill(PRIMARY);
+
+        doc.fillColor('#93C5FD').fontSize(7.5).font('Helvetica')
+            .text(
+                `${company?.name || 'ERP'} — Généré le ${new Date().toLocaleDateString('fr-TN')}`,
+                MARGIN, fy + 4,
+                { align: 'left', width: W / 2 },
+            )
+            .text(
+                `Page ${i + 1} / ${pageCount}`,
+                0, fy + 4,
+                { align: 'right', width: W - MARGIN },
+            );
+
+        if (company?.matriculeFiscal) {
+          doc.text(`MF : ${company.matriculeFiscal}`, 0, fy + 16, { align: 'center', width: W });
+        }
+      }
+
+      doc.end();
     });
   }
 
