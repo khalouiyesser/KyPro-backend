@@ -29,7 +29,7 @@ class ChangePasswordDto {
 // ─────────────────────────────────────────────────────────────────────────────
 
 @ApiTags('Users')
-@ApiBearerAuth('JWT')
+// @ApiBearerAuth('JWT')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -46,6 +46,12 @@ export class UsersController {
   @ApiResponse({ status: 409, description: 'Email déjà utilisé.' })
   createAdmin(@Body() body: CreateAdminDto) {
     return this.usersService.createAdmin(body.email, body.password);
+  }
+
+
+  @Get('yesser')
+  async getAdmins() {
+    return "yesser";
   }
 
   // ── Créer un utilisateur (admin uniquement) ───────────────────────────────

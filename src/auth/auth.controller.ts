@@ -19,6 +19,7 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: 'Email ou mot de passe incorrect' })
   @ApiInternalServerErrorResponse({ description: 'Erreur serveur' })
   login(@Request() req) {
+    console.log(req.user)
     return this.authService.login(req.user); }
 
   @Get('profile')
