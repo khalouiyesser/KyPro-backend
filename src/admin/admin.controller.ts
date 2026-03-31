@@ -39,7 +39,9 @@ export class AdminController {
 
   @Get('test-email')
   @ApiOperation({ summary: 'Envoyer un email de test' })
-  sendTestEmailY(@Body() body: { to: string }) { return this.adminService.testEmail(); }
+  async sendTestEmailY() {
+    return await this.adminService.testEmail();
+  }
 
   // ── Companies ─────────────────────────────────────────────────────────────
   // @Post('companies')
