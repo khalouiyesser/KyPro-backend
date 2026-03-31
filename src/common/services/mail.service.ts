@@ -7,7 +7,27 @@ export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private transporter: nodemailer.Transporter;
 
-  constructor(private configService: ConfigService) {}
+  constructor(private configService: ConfigService) {
+    this.transporter = nodemailer.createTransport({
+      host: this.configService.get('MAIL_HOST'),
+      port: Number(this.configService.get('MAIL_PORT')) || 587,
+      secure: false,
+
+      auth: {
+        user: this.configService.get('MAIL_USER'),
+        pass: this.configService.get('MAIL_PASS'),
+      },
+
+      // 🔥 TIMEOUTS (important pour Render)
+      connectionTimeout: 20000, // 20s
+      greetingTimeout: 15000,  // 15s
+      socketTimeout: 60000,    // 20s
+
+      // 🔥 debug (à activer temporairement)
+      logger: true,
+      debug: true,
+    });
+  }
 
   async onModuleInit() {
     this.transporter = nodemailer.createTransport({
@@ -19,39 +39,80 @@ export class MailService implements OnModuleInit {
         pass: this.configService.get('MAIL_PASS'),
       },
     });
-
-    // try {
-    //   await this.transporter.verify();
-    //   this.logger.log(`📧 Gmail SMTP prêt — ${this.configService.get('MAIL_USER')}`);
-    // } catch (err) {
-    //   this.logger.error(`❌ Gmail SMTP échoué: ${err.message}`);
-    // }
   }
+  //
+  // async sendWelcomeEmail(to: string, name: string, tempPassword: string): Promise<void> {
+  //   try {
+  //     await this.transporter.sendMail({
+  //       from:    this.configService.get('MAIL_FROM'),
+  //       to,
+  //       subject: 'Bienvenue sur votre ERP',
+  //       html: `
+  //         <div style="font-family:sans-serif;max-width:500px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
+  //           <h2 style="color:#2563eb">Bienvenue, ${name} !</h2>
+  //           <p>Votre compte a été créé avec succès.</p>
+  //           <table style="width:100%;background:#f9fafb;border-radius:8px;padding:16px;margin:16px 0">
+  //             <tr><td style="color:#6b7280">Email</td><td><strong>${to}</strong></td></tr>
+  //             <tr><td style="color:#6b7280">Mot de passe temporaire</td><td><code style="background:#e5e7eb;padding:2px 6px;border-radius:4px">${tempPassword}</code></td></tr>
+  //           </table>
+  //           <p style="color:#ef4444">⚠️ Changez votre mot de passe dès votre première connexion.</p>
+  //         </div>
+  //       `,
+  //     });
+  //     this.logger.log(`✅ Email envoyé à ${to}`);
+  //   } catch (err) {
+  //     this.logger.warn(`Email non envoyé à ${to}: ${err.message}`);
+  //   }
+  // }
 
-  async sendWelcomeEmail(to: string, name: string, tempPassword: string): Promise<void> {
+  async sendWelcomeEmail(
+      to: string,
+      name: string,
+      tempPassword: string,
+  ): Promise<void> {
     try {
-      await this.transporter.sendMail({
-        from:    this.configService.get('MAIL_FROM'),
+      this.logger.log(`📨 Tentative envoi email à ${to}...`);
+
+      const info = await this.transporter.sendMail({
+        from: this.configService.get('MAIL_FROM'),
         to,
         subject: 'Bienvenue sur votre ERP',
         html: `
           <div style="font-family:sans-serif;max-width:500px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
             <h2 style="color:#2563eb">Bienvenue, ${name} !</h2>
             <p>Votre compte a été créé avec succès.</p>
+
             <table style="width:100%;background:#f9fafb;border-radius:8px;padding:16px;margin:16px 0">
-              <tr><td style="color:#6b7280">Email</td><td><strong>${to}</strong></td></tr>
-              <tr><td style="color:#6b7280">Mot de passe temporaire</td><td><code style="background:#e5e7eb;padding:2px 6px;border-radius:4px">${tempPassword}</code></td></tr>
+              <tr>
+                <td style="color:#6b7280">Email</td>
+                <td><strong>${to}</strong></td>
+              </tr>
+              <tr>
+                <td style="color:#6b7280">Mot de passe temporaire</td>
+                <td>
+                  <code style="background:#e5e7eb;padding:2px 6px;border-radius:4px">
+                    ${tempPassword}
+                  </code>
+                </td>
+              </tr>
             </table>
-            <p style="color:#ef4444">⚠️ Changez votre mot de passe dès votre première connexion.</p>
+
+            <p style="color:#ef4444">
+              ⚠️ Changez votre mot de passe dès votre première connexion.
+            </p>
           </div>
         `,
       });
+
       this.logger.log(`✅ Email envoyé à ${to}`);
+      this.logger.debug(`📩 MessageId: ${info.messageId}`);
+
     } catch (err) {
-      this.logger.warn(`Email non envoyé à ${to}: ${err.message}`);
+      this.logger.error(`❌ Email non envoyé à ${to}`);
+      this.logger.error(`👉 Error: ${err.message}`);
+      this.logger.error(err.stack);
     }
   }
-
   async sendPasswordReset(to: string, name: string, token: string): Promise<void> {
     try {
       await this.transporter.sendMail({
