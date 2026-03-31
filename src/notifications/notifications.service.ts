@@ -27,4 +27,7 @@ export class NotificationsService {
   async getUnreadCount(companyId: string): Promise<number> {
     return this.notifModel.countDocuments({ companyId: new Types.ObjectId(companyId), isRead: false });
   }
+  async delete(id: string, companyId: string): Promise<void> {
+    await this.notifModel.deleteOne({ _id: new Types.ObjectId(id), companyId: new Types.ObjectId(companyId) });
+  }
 }
