@@ -267,6 +267,8 @@ export class AdminService {
         console.warn(`[AdminService] Email de bienvenue non envoyé à ${admin.email}`);
       });
 
+      console.log("Admin créé :", admin);
+
       const adminObj = admin.toObject() as any;
       delete adminObj.password;
 
