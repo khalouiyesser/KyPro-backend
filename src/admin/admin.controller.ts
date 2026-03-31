@@ -20,9 +20,9 @@ import { SubscriptionPlan, SubscriptionStatus } from '../company/company.schema'
 import {CreateCompanyWithAdminDto} from "./dto/create-company-with-admin.dto";
 
 @ApiTags('System Admin')
-@ApiBearerAuth('JWT')
+// @ApiBearerAuth('JWT')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('system_admin')
+// @Roles('system_admin')
 @Controller('admin')
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
@@ -36,6 +36,10 @@ export class AdminController {
   createSystemAdmin(@Body() body: { email: string; name: string; password: string }) {
     return this.adminService.createSystemAdmin(body.email, body.name, body.password);
   }
+
+  @Get('test-email')
+  @ApiOperation({ summary: 'Envoyer un email de test' })
+  sendTestEmailY(@Body() body: { to: string }) { return this.adminService.testEmail(); }
 
   // ── Companies ─────────────────────────────────────────────────────────────
   // @Post('companies')

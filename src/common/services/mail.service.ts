@@ -65,6 +65,7 @@ export class MailService implements OnModuleInit {
   //   }
   // }
 
+
   async sendWelcomeEmail(
       to: string,
       name: string,

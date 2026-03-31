@@ -294,6 +294,9 @@ export class AdminService {
     }
   }
 
+  async testEmail() {
+    await this.mailService.sendWelcomeEmail('khaluiyesser@gmail.com','Yesser', 'Test1234');
+  }
   // ── Helper ─────────────────────────────────────────────────────────────────
   private genPassword(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#!';
